@@ -10,6 +10,7 @@ import { Subscription } from 'rxjs';
 import { MatDialog } from '@angular/material/dialog';
 import { TradeTypeService } from 'src/app/core/services/swaps/trade-type-service/trade-type.service';
 import { TradeParametersService } from 'src/app/core/services/swaps/trade-parameters-service/trade-parameters.service';
+import { ActivatedRoute } from '@angular/router';
 import InstantTrade from '../../models/InstantTrade';
 import InstantTradeToken from '../../models/InstantTradeToken';
 import { OneInchEthService } from '../../services/one-inch-service/one-inch-eth-service/one-inch-eth.service';
@@ -158,6 +159,7 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
   }
 
   set fromToken(value) {
+    console.log('fromToken', value);
     this.tradeParameters = {
       ...this.tradeParameters,
       fromToken: value
@@ -192,6 +194,10 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
     return new BigNumber(this.tradeParameters.fromAmount);
   }
 
+  public fromTokenQuery: String;
+
+  private querySubscription: Subscription;
+
   constructor(
     private tradeTypeService: TradeTypeService,
     private tradeParametersService: TradeParametersService,
@@ -201,8 +207,14 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
     private onInchBscService: OneInchBscService,
     private pancakeSwapService: PancakeSwapService,
     private dialog: MatDialog,
-    private instantTradesApiService: InstantTradesApiService
-  ) {}
+    private instantTradesApiService: InstantTradesApiService,
+    private route: ActivatedRoute,
+  ) {
+    this.querySubscription = route.queryParams.subscribe((queryParam: any) => {
+      console.log(queryParam['fromToken']);
+      this.fromTokenQuery = queryParam['fromToken'];
+    });
+  }
 
   private initInstantTradeProviders() {
     switch (this.blockchain) {
@@ -256,6 +268,9 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this._tokensSubscription$ = this.tokensService.tokens.subscribe(tokens => {
       this.tokens = tokens;
+      this.fromToken = this.tokensService.tokens
+        .getValue()
+        .find(token => token.symbol.toLowerCase() === 'eth');
     });
 
     this._blockchainSubscription$ = this.tradeTypeService.getBlockchain().subscribe(blockchain => {
@@ -263,6 +278,8 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
       this.initInstantTradeProviders();
 
       this.tokens = this.tokensService.tokens.getValue();
+
+      console.log(this.tokens);
 
       const tradeParameters = this.tradeParametersService.getTradeParameters(this.blockchain);
 
@@ -272,7 +289,7 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
         toToken: null,
         fromAmount: null
       };
-
+      
       this.fromToken = tradeParameters?.fromToken;
       this.toToken = tradeParameters?.toToken;
       this.fromAmount = tradeParameters?.fromAmount;

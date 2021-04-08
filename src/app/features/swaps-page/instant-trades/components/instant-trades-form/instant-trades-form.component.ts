@@ -10,7 +10,9 @@ import { Subscription } from 'rxjs';
 import { MatDialog } from '@angular/material/dialog';
 import { TradeTypeService } from 'src/app/core/services/swaps/trade-type-service/trade-type.service';
 import { TradeParametersService } from 'src/app/core/services/swaps/trade-parameters-service/trade-parameters.service';
-import { ActivatedRoute, Router } from '@angular/router';
+import { Router } from '@angular/router';
+import { take } from 'rxjs/operators';
+import { QueryParamsService } from 'src/app/core/services/swaps/query-params-service/query-params.service';
 import InstantTrade from '../../models/InstantTrade';
 import InstantTradeToken from '../../models/InstantTradeToken';
 import { OneInchEthService } from '../../services/one-inch-service/one-inch-eth-service/one-inch-eth.service';
@@ -62,6 +64,10 @@ enum TRADE_STATUS {
 })
 export class InstantTradesFormComponent implements OnInit, OnDestroy {
   private _blockchainSubscription$: Subscription;
+
+  private _setBlockchainSubsctiption$: Subscription;
+
+  private _setTokensSubscription$: Subscription;
 
   private _instantTradeServices: InstantTradeService[];
 
@@ -159,12 +165,20 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
   }
 
   set fromToken(value) {
+
     this.tradeParameters = {
       ...this.tradeParameters,
       fromToken: value
     };
-    
-    if (this.fromToken) this.updateQueryParameters();
+
+    if (this.fromToken) {
+      this.router.navigate([], {
+        queryParams: {
+          fromToken: this.fromToken.symbol
+        },
+        queryParamsHandling: 'merge'
+      });
+    }
 
     this.availableToTokens = this.tokens.filter(token => token.address !== value?.address);
   }
@@ -179,7 +193,14 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
       toToken: value
     };
 
-    if (this.toToken) this.updateQueryParameters();
+    if (this.toToken) {
+      this.router.navigate([], {
+        queryParams: {
+          toToken: this.toToken.symbol
+        },
+        queryParamsHandling: 'merge'
+      });
+    };
 
     this.availableFromTokens = this.tokens.filter(token => token.address !== value?.address);
   }
@@ -199,13 +220,6 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
     return new BigNumber(this.tradeParameters.fromAmount);
   }
 
-  /** search params */
-  public fromTokenQuery: String;
-
-  public toTokenQuery: String;
-
-  private querySubscription: Subscription;
-
   constructor(
     private tradeTypeService: TradeTypeService,
     private tradeParametersService: TradeParametersService,
@@ -216,14 +230,9 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
     private pancakeSwapService: PancakeSwapService,
     private dialog: MatDialog,
     private instantTradesApiService: InstantTradesApiService,
-    private route: ActivatedRoute,
     private router: Router,
-  ) {
-    this.querySubscription = route.queryParams.subscribe((queryParam: any) => {
-      this.fromTokenQuery = queryParam['fromToken'];
-      this.toTokenQuery = queryParam['toToken'];
-    });
-  }
+    private queryParams: QueryParamsService,
+  ) {}
 
   private initInstantTradeProviders() {
     switch (this.blockchain) {
@@ -277,10 +286,14 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this._tokensSubscription$ = this.tokensService.tokens.subscribe(tokens => {
       this.tokens = tokens;
+    });
 
+    this._setTokensSubscription$ = this.tokensService.tokens.pipe(take(2)).subscribe(tokens => {
       if (tokens.size > 0) {
-        const from = this.availableFromTokens.find(token => token.symbol === this.fromTokenQuery);
-        const to = this.availableToTokens.find(token => token.symbol === this.toTokenQuery);
+        const from = this.availableFromTokens.find(token => token.symbol === this.queryParams.fromToken);
+        const to = this.availableToTokens.find(token => token.symbol === this.queryParams.toToken);
+
+        console.log(from, to);
 
         this.fromToken = from;
         this.toToken = to;
@@ -289,6 +302,16 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
 
     this._blockchainSubscription$ = this.tradeTypeService.getBlockchain().subscribe(blockchain => {
       this.blockchain = blockchain;
+
+      if (this.blockchain) {
+        this.router.navigate([], {
+          queryParams: {
+            blockchain: this.blockchain
+          },
+          queryParamsHandling: 'merge'
+        });
+      }
+
       this.initInstantTradeProviders();
 
       this.tokens = this.tokensService.tokens.getValue();
@@ -300,28 +323,25 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
         toToken: null,
         fromAmount: null
       };
-      
+
       this.fromToken = tradeParameters?.fromToken;
       this.toToken = tradeParameters?.toToken;
       this.fromAmount = tradeParameters?.fromAmount;
     });
+
+    this._setBlockchainSubsctiption$ = this.tradeTypeService
+      .getBlockchain()
+      .pipe(take(1))
+      .subscribe(blockchain => {
+        if (this.queryParams.blockchain)
+          this.tradeTypeService.setBlockchain(this.queryParams.blockchain as BLOCKCHAIN_NAME);
+      });
   }
 
   ngOnDestroy() {
     this._tokensSubscription$.unsubscribe();
     this._blockchainSubscription$.unsubscribe();
-  }
-
-  updateQueryParameters() {
-    if (this.fromToken || this.toToken) {
-      this.router.navigate([], {
-        queryParams: {
-          fromToken: this.fromToken?.symbol,
-          toToken: this.toToken?.symbol,
-        }, 
-        queryParamsHandling: 'merge'
-      });
-    }
+    this._setBlockchainSubsctiption$.unsubscribe();
   }
 
   private isCalculatedTradeActual(

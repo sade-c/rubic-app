@@ -14,6 +14,8 @@ import { RubicError } from 'src/app/shared/models/errors/RubicError';
 import { NetworkError } from 'src/app/shared/models/errors/provider/NetworkError';
 import { MessageBoxComponent } from 'src/app/shared/components/message-box/message-box.component';
 import { Router } from '@angular/router';
+import { QueryParamsService } from 'src/app/core/services/swaps/query-params-service/query-params.service';
+import { take } from 'rxjs/operators';
 import { OrderBookTradeForm } from '../../models/trade-form';
 import { NetworkErrorComponent } from '../../../../bridge-page/components/network-error/network-error.component';
 import { MetamaskError } from '../../../../../shared/models/errors/provider/MetamaskError';
@@ -36,6 +38,10 @@ export class OrderBooksFormComponent implements OnInit, OnDestroy {
   public blockchain: BLOCKCHAIN_NAME;
 
   private _blockchainSubscription$: Subscription;
+
+  private _setBlockchainSubsctiption$: Subscription;
+
+  private _setTokensSubscription$: Subscription;
 
   private _tradeParameters: TradeParameters;
 
@@ -65,6 +71,10 @@ export class OrderBooksFormComponent implements OnInit, OnDestroy {
   public transactionHash: string;
 
   private createdUniqueLink: string;
+
+  public fromTokenQuery: String;
+
+  public toTokenQuery: String;
 
   get tradeParameters(): TradeParameters {
     return this._tradeParameters;
@@ -123,6 +133,16 @@ export class OrderBooksFormComponent implements OnInit, OnDestroy {
       ...this.tradeParameters,
       fromToken: value
     };
+
+    if (this.baseToken) {
+      this.router.navigate([], {
+        queryParams: {
+          fromToken: this.baseToken.symbol
+        },
+        queryParamsHandling: 'merge'
+      });
+    }
+
     this.availableQuoteTokens = this.tokens.filter(token => token.address !== value?.address);
   }
 
@@ -135,6 +155,16 @@ export class OrderBooksFormComponent implements OnInit, OnDestroy {
       ...this.tradeParameters,
       toToken: value
     };
+
+    if (this.quoteToken) {
+      this.router.navigate([], {
+        queryParams: {
+          fromToken: this.quoteToken.symbol
+        },
+        queryParamsHandling: 'merge'
+      });
+    }
+
     this.availableBaseTokens = this.tokens.filter(token => token.address !== value?.address);
   }
 
@@ -185,7 +215,8 @@ export class OrderBooksFormComponent implements OnInit, OnDestroy {
     private tradeParametersService: TradeParametersService,
     private orderBookFormService: OrderBooksFormService,
     private changeDetectionRef: ChangeDetectorRef,
-    private dialog: MatDialog
+    private dialog: MatDialog,
+    private queryParams: QueryParamsService,
   ) {}
 
   ngOnInit(): void {
@@ -202,11 +233,22 @@ export class OrderBooksFormComponent implements OnInit, OnDestroy {
     this._blockchainSubscription$ = this.tradeTypeService.getBlockchain().subscribe(blockchain => {
       this.blockchain = blockchain;
 
+      if (this.blockchain) {
+        this.router.navigate([], {
+          queryParams: {
+            blockchain: this.blockchain
+          },
+          queryParamsHandling: 'merge'
+        });
+      }
+
       this.tradeForm = { ...this.tradeForm, blockchain: this.blockchain };
 
       this.tokens = this.tokensService.tokens.getValue();
 
       const tradeParameters = this.tradeParametersService.getTradeParameters(this.blockchain);
+
+      console.log(tradeParameters);
 
       this._tradeParameters = {
         ...tradeParameters,
@@ -216,11 +258,22 @@ export class OrderBooksFormComponent implements OnInit, OnDestroy {
         toAmount: null
       };
 
+      console.log(this.tradeParameters);
+
       this.baseToken = tradeParameters?.fromToken;
       this.quoteToken = tradeParameters?.toToken;
       this.baseAmount = tradeParameters?.fromAmount;
       this.quoteAmount = tradeParameters?.toAmount;
     });
+
+    // tokens subscription
+    this._setBlockchainSubsctiption$ = this.tradeTypeService
+      .getBlockchain()
+      .pipe(take(1))
+      .subscribe(blockchain => {
+        if (this.queryParams.blockchain)
+          this.tradeTypeService.setBlockchain(this.queryParams.blockchain as BLOCKCHAIN_NAME);
+      });
 
     // tokens subscription
     this._tokensSubscription$ = this.tokensService.tokens.subscribe(tokens => {
@@ -238,6 +291,16 @@ export class OrderBooksFormComponent implements OnInit, OnDestroy {
       );
       if (foundQuoteToken) {
         this.quoteToken = foundQuoteToken;
+      }
+    });
+
+    this._setTokensSubscription$ = this.tokensService.tokens.pipe(take(2)).subscribe(tokens => {
+      if (tokens.size > 0) {
+        const from = this.tokens.find(token => token.symbol === this.queryParams.fromToken);
+        const to = this.tokens.find(token => token.symbol === this.queryParams.toToken);
+
+        this.baseToken = from;
+        this.quoteToken = to;
       }
     });
   }

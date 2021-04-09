@@ -290,13 +290,20 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
 
     this._setTokensSubscription$ = this.tokensService.tokens.pipe(take(2)).subscribe(tokens => {
       if (tokens.size > 0) {
-        const from = this.availableFromTokens.find(token => token.symbol === this.queryParams.fromToken);
-        const to = this.availableToTokens.find(token => token.symbol === this.queryParams.toToken);
 
-        console.log(from, to);
+        console.log(this.blockchain);
 
-        this.fromToken = from;
-        this.toToken = to;
+        if (this.queryParams.fromToken) {
+          this.fromToken = this.isAddressQuery(this.queryParams.fromToken)
+            ? this.searchTokenByAddress(this.queryParams.fromToken)
+            : this.searchTokenBySymbol(this.queryParams.fromToken);
+        }
+
+        if (this.queryParams.toToken) {
+          this.toToken = this.isAddressQuery(this.queryParams.toToken)
+            ? this.searchTokenByAddress(this.queryParams.toToken)
+            : this.searchTokenBySymbol(this.queryParams.toToken);
+        }
       }
     });
 
@@ -573,5 +580,19 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
     this.trades.map(trade => ({ ...trade, tradeState: null }));
     this.selectedTradeState = null;
     this.transactionHash = undefined;
+  }
+
+  public isAddressQuery = (str) => str.length > 0 && str.slice(0, 2) === '0x';
+
+  public searchTokenByAddress = (queryParam) => {
+    return this.availableFromTokens.find(
+      token => token.address === queryParam
+    );
+  }
+
+  public searchTokenBySymbol = (queryParam) => {
+    return this.availableFromTokens.find(
+      token => token.symbol === queryParam
+    );
   }
 }

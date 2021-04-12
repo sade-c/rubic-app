@@ -1,7 +1,9 @@
 import { Component } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { TranslateService } from '@ngx-translate/core';
 import { CookieService } from 'ngx-cookie-service';
 import { HealthcheckService } from './core/services/backend/healthcheck/healthcheck.service';
+import { QueryParamsService } from './core/services/swaps/query-params-service/query-params.service';
 
 @Component({
   selector: 'app-root',
@@ -14,7 +16,9 @@ export class AppComponent {
   constructor(
     private readonly healthcheckService: HealthcheckService,
     private readonly translateService: TranslateService,
-    private readonly cookieService: CookieService
+    private readonly cookieService: CookieService,
+    private readonly queryParamsService: QueryParamsService,
+    private readonly route: ActivatedRoute
   ) {
     this.setupLanguage();
     this.healthcheckService

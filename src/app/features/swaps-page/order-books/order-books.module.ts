@@ -40,10 +40,6 @@ import { OrderBooksTableService } from './components/order-books-table/services/
     OrderBooksFormService,
     OrderBooksTableService,
     {
-      provide: TradeTypeService,
-      useClass: TradeTypeService
-    },
-    {
       provide: TradeParametersService,
       useClass: TradeParametersService
     }

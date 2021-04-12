@@ -13,6 +13,7 @@ import { TradeParametersService } from 'src/app/core/services/swaps/trade-parame
 import { Router } from '@angular/router';
 import { take } from 'rxjs/operators';
 import { QueryParamsService } from 'src/app/core/services/swaps/query-params-service/query-params.service';
+import { Web3PublicService } from 'src/app/core/services/blockchain/web3-public-service/web3-public.service';
 import InstantTrade from '../../models/InstantTrade';
 import InstantTradeToken from '../../models/InstantTradeToken';
 import { OneInchEthService } from '../../services/one-inch-service/one-inch-eth-service/one-inch-eth.service';
@@ -165,20 +166,12 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
   }
 
   set fromToken(value) {
-
     this.tradeParameters = {
       ...this.tradeParameters,
       fromToken: value
     };
 
-    if (this.fromToken) {
-      this.router.navigate([], {
-        queryParams: {
-          fromToken: this.fromToken.symbol
-        },
-        queryParamsHandling: 'merge'
-      });
-    }
+    if (this.fromToken) this.navigateByParam('from', this.fromToken.symbol);
 
     this.availableToTokens = this.tokens.filter(token => token.address !== value?.address);
   }
@@ -193,14 +186,7 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
       toToken: value
     };
 
-    if (this.toToken) {
-      this.router.navigate([], {
-        queryParams: {
-          toToken: this.toToken.symbol
-        },
-        queryParamsHandling: 'merge'
-      });
-    };
+    if (this.toToken) this.navigateByParam('to', this.toToken.symbol)
 
     this.availableFromTokens = this.tokens.filter(token => token.address !== value?.address);
   }
@@ -214,6 +200,8 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
       ...this.tradeParameters,
       fromAmount: value
     };
+
+    this.navigateByParam('amount', value);
   }
 
   get fromAmountAsNumber(): BigNumber {
@@ -231,7 +219,8 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
     private dialog: MatDialog,
     private instantTradesApiService: InstantTradesApiService,
     private router: Router,
-    private queryParams: QueryParamsService,
+    private queryParamsService: QueryParamsService,
+    private web3Service: Web3PublicService,
   ) {}
 
   private initInstantTradeProviders() {
@@ -284,39 +273,47 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
+    this.queryParamsService.setupDefaultParams();
     this._tokensSubscription$ = this.tokensService.tokens.subscribe(tokens => {
       this.tokens = tokens;
     });
 
     this._setTokensSubscription$ = this.tokensService.tokens.pipe(take(2)).subscribe(tokens => {
-      if (tokens.size > 0) {
+      if (tokens.size > 0 && this.queryParamsService.queryParams) {
+        const fromQuery = this.queryParamsService.queryParams?.from;
+        const toQuery = this.queryParamsService.queryParams?.to;
 
-        console.log(this.blockchain);
-
-        if (this.queryParams.fromToken) {
-          this.fromToken = this.isAddressQuery(this.queryParams.fromToken)
-            ? this.searchTokenByAddress(this.queryParams.fromToken)
-            : this.searchTokenBySymbol(this.queryParams.fromToken);
+        if (this.isAddressQuery(fromQuery)) {
+          this.fromToken = this.searchTokenByAddress(fromQuery);
+          if (!this.fromToken) {
+            this.getCustomToken(fromQuery).then(res => {
+              this.fromToken = res;
+              this.navigateByParam('from', this.fromToken.address);
+            })
+          };
         }
 
-        if (this.queryParams.toToken) {
-          this.toToken = this.isAddressQuery(this.queryParams.toToken)
-            ? this.searchTokenByAddress(this.queryParams.toToken)
-            : this.searchTokenBySymbol(this.queryParams.toToken);
+        if (this.isAddressQuery(toQuery)) {
+          this.toToken = this.searchTokenByAddress(toQuery);
+          if (!this.toToken) {
+            this.getCustomToken(toQuery).then(res => {
+              this.toToken = res;
+              this.navigateByParam('to', this.toToken.address);
+            })
+          }
         }
+
+        if (!this.isAddressQuery(fromQuery)) this.fromToken = this.searchTokenBySymbol(this.queryParamsService.queryParams.from);
+        if (!this.isAddressQuery(toQuery)) this.toToken = this.searchTokenBySymbol(this.queryParamsService.queryParams.to);
       }
     });
 
     this._blockchainSubscription$ = this.tradeTypeService.getBlockchain().subscribe(blockchain => {
       this.blockchain = blockchain;
 
-      if (this.blockchain) {
-        this.router.navigate([], {
-          queryParams: {
-            blockchain: this.blockchain
-          },
-          queryParamsHandling: 'merge'
-        });
+      if (blockchain) {
+        this.queryParamsService.setParam('chain', blockchain);
+        this.queryParamsService.navigateByParams();
       }
 
       this.initInstantTradeProviders();
@@ -338,11 +335,15 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
 
     this._setBlockchainSubsctiption$ = this.tradeTypeService
       .getBlockchain()
-      .pipe(take(1))
+      .pipe(take(2))
       .subscribe(blockchain => {
-        if (this.queryParams.blockchain)
-          this.tradeTypeService.setBlockchain(this.queryParams.blockchain as BLOCKCHAIN_NAME);
+        if (blockchain && this.queryParamsService.queryParams?.chain)
+          this.tradeTypeService.setBlockchain(
+            this.queryParamsService.queryParams.chain as BLOCKCHAIN_NAME
+          );
       });
+
+    if (this.queryParamsService.queryParams?.amount) this.fromAmount = this.queryParamsService.queryParams.amount;
   }
 
   ngOnDestroy() {
@@ -522,15 +523,19 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
   public addCustomToken(part: 'from' | 'to'): void {
     if (part === 'from') {
       this.fromToken = { ...this.customToken.from };
+      this.navigateByParam('from', this.fromToken.address);
     } else {
       this.toToken = { ...this.customToken.to };
+      this.navigateByParam('from', this.toToken.address);
     }
   }
 
   public isAnyTokenCustom(): boolean {
     return (
       (this.fromToken &&
-        !this.tokens.find(t => t.address.toLowerCase() === this.fromToken.address.toLowerCase())) ||
+        !this.tokens.find(
+          t => t?.address.toLowerCase() === this.fromToken.address.toLowerCase()
+        )) ||
       (this.toToken &&
         !this.tokens.find(t => t.address.toLowerCase() === this.toToken.address.toLowerCase()))
     );
@@ -582,17 +587,40 @@ export class InstantTradesFormComponent implements OnInit, OnDestroy {
     this.transactionHash = undefined;
   }
 
-  public isAddressQuery = (str) => str.length > 0 && str.slice(0, 2) === '0x';
+  public isAddressQuery = str => str.length > 0 && str.slice(0, 2) === '0x';
 
-  public searchTokenByAddress = (queryParam) => {
+  public searchTokenByAddress = queryParam => {
     return this.availableFromTokens.find(
-      token => token.address === queryParam
+      token => token.address.toLowerCase() === queryParam.toLowerCase()
     );
+  };
+
+  public searchTokenBySymbol = queryParam => {
+    return this.availableFromTokens.find(
+      token =>
+        token.symbol.toLowerCase() === queryParam.toLowerCase() ||
+        token.symbol.toLowerCase() === queryParam.toLowerCase()
+    );
+  };
+
+  public navigateByParam = (part: any, param: String) => {
+
+    this.router.navigate([], {
+      queryParams: {
+        [part]: param
+      },
+      queryParamsHandling: 'merge'
+    });
   }
 
-  public searchTokenBySymbol = (queryParam) => {
-    return this.availableFromTokens.find(
-      token => token.symbol === queryParam
-    );
+  public getCustomToken = (query: String) => {
+    return this.web3Service[this.blockchain].getTokenInfo(query).then((token: Token) => ({
+      blockchain: undefined,
+      image: undefined,
+      rank: undefined,
+      price: undefined,
+      used_in_iframe: undefined,
+      ...token,
+    }))
   }
 }
